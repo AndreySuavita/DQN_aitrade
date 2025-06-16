@@ -1,5 +1,10 @@
 venv/
-
+Double_DQN_hourly_backup/
+Double_DQN_hourly_SSTCV_OP_V_T_backup
 __pycache__/
+
 trading_bot.log
 binance_connection.ipynb
+
+
+.env

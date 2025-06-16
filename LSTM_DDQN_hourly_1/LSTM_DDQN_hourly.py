@@ -12,20 +12,20 @@ import pandas_ta as ta
 import time
 
 
-# Configuración inicial
+# Initial configuration
 start_time = time.time()
 logging.basicConfig(filename='trading_bot.log', level=logging.INFO)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Usando: {device}")
+print(f"Using: {device}")
 
-# --- Cargar y preprocesar datos mejorado ---
+# --- Load and preprocess data ---
 def load_and_preprocess_data(filepath):
-    """Carga y preprocesa los datos históricos con normalización mejorada"""
+    """Loads and preprocesses historical data with improved normalization"""
     df = pd.read_csv(filepath, index_col='close_time')
     df.index = pd.to_datetime(df.index)
     df = df.replace([np.inf, -np.inf], np.nan).ffill()
-    
-    # --- Indicadores técnicos mejorados ---
+
+    # --- Improved technical indicators ---
     df['OBV'] = ta.obv(df['close_price'], df['close_volume'])
     df['VWAP'] = ta.vwap(df['high_price'], df['low_price'], df['close_price'], df['close_volume'])
     df['MA_24h'] = df['close_price'].rolling(window=24).mean()
@@ -37,16 +37,16 @@ def load_and_preprocess_data(filepath):
     df['MACD'] = df['EMA_12'] - df['EMA_26']
     df['ATR_24h'] = ta.atr(df['high_price'], df['low_price'], df['close_price'], length=24)
     df['Momentum_24h'] = df['close_price'].pct_change(24)
-    
-    # Normalización especial para indicadores acotados
-    df['RSI_14h'] = df['RSI_14h'] / 100  # Normalizar RSI entre 0-1
-    df['MACD'] = np.tanh(df['MACD'].values * 0.1)  # Versión más segura
-    
-    # Normalización mejorada
+
+    # Special normalization for bounded indicators
+    df['RSI_14h'] = df['RSI_14h'] / 100  # Normalize RSI between 0-1
+    df['MACD'] = np.tanh(df['MACD'].values * 0.1)  # Safer version
+
+    # Improved normalization
     df['OBV'] = np.tanh(df['OBV'].values * 1e-7)
     df['VWAP'] = (df['VWAP'] - df['close_price'].mean()) / df['close_price'].std()
 
-    # Normalización estándar para otras features
+    # Standard normalization for other features
     scaler = MinMaxScaler()
     features_to_scale = ['open_price', 'high_price', 'low_price', 'close_price', 
                          'close_volume', 'MA_24h', 'MA_168h', 'hourly_return',
@@ -55,94 +55,92 @@ def load_and_preprocess_data(filepath):
     
     return df.values, df, scaler
 
-# --- Entorno de Trading Mejorado (AJUSTES PARA HORARIO) ---
+# --- Enhanced Trading Environment ---
 class EnhancedTradingEnvironment:
-    def __init__(self, data, window_size=24):  # Ventana de 24 horas (1 día)
-        self.data = data   # Datos normalizados (numpy array)
-        self.window_size = window_size # Historial de 24 horas (1 día)
-        self.current_step = window_size # Paso actual (empieza después de tener ventana completa)
-        self.max_steps = len(data) - 1 # Máximo de pasos posibles
-        self.action_space = 3  # 0=vender, 1=mantener, 2=comprar
-        self.state_size = window_size * data.shape[1] # Tamaño del estado (ventana * features) (192=8*24)
-        self.position = 0  # 0=no invertido, 1=invertido
-        self.commission = 0.001  # comisión por operación, cambiar a 0.001
-        self.max_position_size = 0.1  # 10% del portafolio máximo por operación
+    def __init__(self, data, window_size=24):  
+        self.data = data   
+        self.window_size = window_size 
+        self.current_step = window_size 
+        self.max_steps = len(data) - 1 
+        self.action_space = 3  
+        self.state_size = window_size * data.shape[1] 
+        self.position = 0  
+        self.commission = 0.001  
+        self.max_position_size = 0.1  
 
-    def reset(self): # Se llama al inicio de cada episodio de entrenamiento para comenzar desde un estado limpio.
-        self.current_step = self.window_size  # Reinicia al inicio de los datos (después de la ventana)
-        self.position = 0                     # Cierra cualquier posición abierta
+    def reset(self): 
+        self.current_step = self.window_size  
+        self.position = 0                     
         return self._get_state()    
     
     def _get_state(self):
         """
-        Toma los datos de las últimas window_size horas (ej: 24 filas).
-        flatten(): Convierte la matriz 2D (24h x 8 features) en un vector 1D (para la red neuronal).
+        Takes the last window_size hours of data (e.g., 24 rows).
+        flatten(): Converts the 2D matrix (24h x 8 features) into a 1D vector (for the neural network).
         """
         return self.data[self.current_step - self.window_size : self.current_step].flatten()
     
     def step(self, action):
-        current_price = self.data[self.current_step, 3]  # Precio de cierre actual (columna 3)
-        next_price = self.data[self.current_step + 1, 3] if self.current_step < self.max_steps else current_price # Precio de la siguiente hora
+        current_price = self.data[self.current_step, 3]  # Current closing price (column 3)
+        next_price = self.data[self.current_step + 1, 3] if self.current_step < self.max_steps else current_price # Next hour's price
         price_change = (next_price - current_price) / current_price if current_price != 0 else 0
-        
-        # Validar acción (mantenido igual) -- Evita acciones imposibles (ej: vender sin tener activos).
-        valid_action = action
-        if action == 2 and self.position == 1:   # Quiere comprar pero ya está invertido
-            valid_action = 1                     # Forzar a mantener
-        elif action == 0 and self.position != 1: # Quiere vender sin tener posición
-            valid_action = 1                    # Forzar a mantener
-        
-        # Sistema de recompensas mejorado
-        
-        
-        # Nuevo sistema de recompensas con momentum
-        momentum = self.data[self.current_step, 10]  # Índice de Momentum
-        obv = self.data[self.current_step, 5]       # OBV normalizado
-        rsi = self.data[self.current_step, 7]  # RSI normalizado (0-1)
 
-        if valid_action == 2:  # Comprar
-            reward = price_change * (6.0 + 2.0 * momentum)  # Refuerzo positivo con momentum
+        # Validate action -- Prevent impossible actions (e.g., selling without holding).
+        valid_action = action
+        if action == 2 and self.position == 1:   # Wants to buy but already invested
+            valid_action = 1                     # Force to hold
+        elif action == 0 and self.position != 1: # Wants to sell without holding
+            valid_action = 1                     # Force to hold
+
+
+        # Reward system with momentum
+        momentum = self.data[self.current_step, 10]  # Momentum index
+        obv = self.data[self.current_step, 5]       # Normalized OBV
+        rsi = self.data[self.current_step, 7]  # Normalized RSI (0-1)
+
+        if valid_action == 2:  # Buy
+            reward = price_change * (6.0 + 2.0 * momentum)  # Positive reinforcement with momentum
             if rsi > 0.7:
-                reward *= 0.2  # Penalización más fuerte
-            elif obv < -0.5:   # Si el flujo de dinero es negativo
+                reward *= 0.2  # Stronger penalty
+            elif obv < -0.5:   # If money flow is negative
                 reward *= 0.3
             self.position = 1
-            
-        elif valid_action == 0:  # Vender
-            reward = -price_change * (2.0 - 1.0 * momentum)  # Menor recompensa
+
+        elif valid_action == 0:  # Sell
+            reward = -price_change * (2.0 - 1.0 * momentum)  # Smaller reward
             if rsi < 0.3:
                 reward *= 0.3
-            elif obv > 0.5:     # Si el flujo de dinero es positivo
+            elif obv > 0.5:     # If money flow is positive
                 reward *= 0.5
             self.position = 0
-            
-        else:  # Mantener
-            reward = 0.1 * (1 + obv)  # Recompensa basada en flujo de dinero
+
+        else:  # Hold
+            reward = 0.1 * (1 + obv)  # Reward based on money flow
 
 
-        # Penalización por sobre-operar
-        if valid_action != 1 and abs(price_change) < 0.005:  # Movimientos pequeños
+        # Penalty for over-operating
+        if valid_action != 1 and abs(price_change) < 0.005:  # Small movements
             reward -= 0.1
 
-        # Limitar recompensas
+        # Limit rewards
         reward = np.clip(reward, -2.0, 2.0)
         
         self.current_step += 1
-        done = self.current_step >= self.max_steps # ¿Llegamos al final de los datos?
+        done = self.current_step >= self.max_steps 
         next_state = self._get_state()
         
         """
-        next_state: Nuevo estado (ventana deslizada 1 hora).
+        next_state: New state (1 hour sliding window).
 
-        reward: Recompensa/penalización.
+        reward: Reward/penalty.
 
-        done: True si el episodio terminó.
+        done: True if the episode finished.
 
-        info: Metadata útil (precio actual, acción válida).
+        info: Useful metadata (current price, valid action).
         """
         return next_state, reward, done, {"price": current_price, "valid_action": valid_action}
 
-# --- Red Neuronal  ---
+# --- Neural Network ---
 class EnhancedDQN(nn.Module):
     def __init__(self, state_size, action_size, window_size=24):
         self.window_size = window_size
@@ -154,255 +152,250 @@ class EnhancedDQN(nn.Module):
                            batch_first=True)
         self.net = nn.Sequential(
             nn.Linear(64, 512),
-            nn.SiLU(),  # Nueva función de activación
+            nn.SiLU(),  
             nn.Dropout(0.3),
             nn.Linear(512, 256),
-            nn.LayerNorm(256),  # Normalización por capas
+            nn.LayerNorm(256),  
             nn.SiLU(),
             nn.Linear(256, action_size)
         )
     def forward(self, x):
         if x.dim() == 1:
             x = x.unsqueeze(0)
-        x = x.view(-1, self.window_size, self.state_size//self.window_size)  # Reformar para LSTM
+        x = x.view(-1, self.window_size, self.state_size//self.window_size)  
         lstm_out, _ = self.lstm(x)
-        x = lstm_out[:, -1, :]  # Tomar sólo la última salida
+        x = lstm_out[:, -1, :]  
         return self.net(x)
 
 class EnhancedDQNAgent:
     """
-        Double DQN: Separa la selección y evaluación de acciones
+        Double DQN: Separate action selection and evaluation
 
-        Experience Replay: Memoria de 50,000 transiciones
+        Experience Replay: Memory of 50,000 transitions
 
-        Target Network: Red separada para cálculos estables
+        Target Network: Separate network for stable calculations
 
-        Soft Updates: Actualización progresiva de la red objetivo
+        Soft Updates: Progressive update of the target network
     """
     def __init__(self, state_size, action_size):
         self.state_size = state_size # 192
         self.action_size = action_size # 3
-        self.memory = deque(maxlen=50000)  # Buffer de experiencias
-        self.gamma = 0.98  # Factor de descuento de recompensas futuras
-        self.epsilon = 1.0  # Probabilidad inicial de exploración (100%)
-        self.epsilon_min = 0.05  # Mínima exploración permitida (10%)
-        self.epsilon_decay = 0.9999995 # Tasa de decaimiento de epsilon muy lenta para 120 episodios llega a 0.1
-        self.model = EnhancedDQN(state_size, action_size).to(device) #red objetivo
-        self.target_model = EnhancedDQN(state_size, action_size).to(device) #red principal
-        self.target_model.load_state_dict(self.model.state_dict())  # Inicialización idéntica
+        self.memory = deque(maxlen=50000)  # Experience replay buffer
+        self.gamma = 0.98  # Discount factor for future rewards
+        self.epsilon = 1.0  # Initial exploration probability (100%)
+        self.epsilon_min = 0.05  # Minimum exploration probability (5%)
+        self.epsilon_decay = 0.98 # Very slow decay rate for epsilon
+        self.model = EnhancedDQN(state_size, action_size).to(device) # Main network
+        self.target_model = EnhancedDQN(state_size, action_size).to(device) # Target network
+        self.target_model.load_state_dict(self.model.state_dict())  # Identical initialization
         self.optimizer = optim.AdamW(self.model.parameters(), lr=0.0001, weight_decay=1e-5, amsgrad=True)
-        self.batch_size = 512  # Tamaño del mini-batch #128
-        self.tau = 0.005  # Para soft update del target network
-        self.update_every = 5  # Frecuencia de actualización 
-    
+        self.batch_size = 512  # Mini-batch size
+        self.tau = 0.005  # For soft update of the target network
+        self.update_every = 5  # Update frequency
+
     def remember(self, state, action, reward, next_state, done):
         """
-            Función: Almacena experiencias (state, action, reward, next_state, done)
-            Capacidad: 50,000 muestras (elimina las más antiguas al superar este límite)
+            Function: Stores experiences (state, action, reward, next_state, done)
+            Capacity: 50,000 samples (deletes the oldest ones when this limit is exceeded)
         """
         self.memory.append((state, action, reward, next_state, done))
-    
-    def act(self, state): # Toma de decisiones
+
+    def act(self, state): # Decision making
         """
-            ε-greedy: Balance entre exploración (acciones aleatorias) y explotación (usar el modelo)
-            Procesamiento:
-                - Convierte el estado a tensor
-                - Añade dimensión de batch (unsqueeze)
-                - Mueve a GPU si está disponible
+            ε-greedy: Balance between exploration (random actions) and exploitation (using the model)
+            Processing:
+                - Converts the state to tensor
+                - Adds batch dimension (unsqueeze)
+                - Moves to GPU if available
         """
-        if np.random.rand() <= self.epsilon:  # Exploración (acción aleatoria)
+        if np.random.rand() <= self.epsilon:  # Exploration (random action)
             return random.randrange(self.action_size)
-        
-        # Explotación (usar el modelo)
-        # Asegurar que el estado tiene la forma correcta
+
+        # Exploitation using the model
         state = torch.FloatTensor(state).to(device)
         if state.dim() == 1:
-            state = state.unsqueeze(0)  # Añadir dimensión batch si es necesario
+            state = state.unsqueeze(0)  # Add batch dimension if necessary
 
-        self.model.eval()  # Modo evaluación
-        with torch.no_grad(): #anula los gradientes para la evaluación
-            q_values = self.model(state) # Shape: [1, 3] (Q-values para cada acción)
-        self.model.train()  # Vuelve a modo entrenamiento
-        return torch.argmax(q_values).item()  # Explotación (mejor acción), # Devuelve la acción con mayor Q-value
-    
-    def replay(self): # Entrenamiento (replay) - Cuando memoria ≥ batch_size
+        self.model.eval()  # Evaluation mode
+        with torch.no_grad():  # Disable gradients for evaluation
+            q_values = self.model(state)  # Shape: [1, 3] (Q-values for each action)
+        self.model.train()  # Switch back to training mode
+        return torch.argmax(q_values).item()  # Exploitation (best action), return action with highest Q-value
+
+    def replay(self):  # Training (replay) - When memory ≥ batch_size
         """
-            Muestrea 64 experiencias aleatorias del buffer.
+            Samples 64 random experiences from the buffer.
 
-            Calcula los Q-targets (usando Double DQN).
+            Calculates the Q-targets (using Double DQN).
 
-            Realiza backpropagation y actualiza los pesos de la red.
+            Performs backpropagation and updates the network weights.
 
-            Suaviza la actualización de la red objetivo (target_model).
+            Soft updates the target network (target_model).
         """
         if len(self.memory) < self.batch_size:
             return
-        
-        # Muestreo de Experiencias
-        minibatch = random.sample(self.memory, self.batch_size) # selecciona 64 experiencias aleatorias de experiencias pasadas
-        states = torch.FloatTensor(np.array([t[0] for t in minibatch])).to(device) 
-        #print("Dimensiones de states:", states.shape)  # Debería ser [batch_size, state_size]
+
+        # Experience Sampling
+        minibatch = random.sample(self.memory, self.batch_size)  # Selects 64 random experiences from past experiences
+        states = torch.FloatTensor(np.array([t[0] for t in minibatch])).to(device)
+        #print("Dimensiones de states:", states.shape)  # Should be [batch_size, state_size]
         actions = torch.LongTensor(np.array([t[1] for t in minibatch])).to(device)
         rewards = torch.FloatTensor(np.array([t[2] for t in minibatch])).to(device)
         next_states = torch.FloatTensor(np.array([t[3] for t in minibatch])).to(device)
         dones = torch.FloatTensor(np.array([t[4] for t in minibatch])).to(device)
-        
-        # Double DQN # Usa model para elegir la acción, pero target_model para evaluar su Q-value.
-        next_actions = self.model(next_states).max(1)[1]  # Selección con red principal
-        next_q = self.target_model(next_states).gather(1, next_actions.unsqueeze(1))  # Evaluación con red objetivo
-        target = rewards + (1 - dones) * self.gamma * next_q.squeeze()  # Cálculo del target ,Fórmula de Bellman ajustada
-        
-        # Actualización de pesos # Backpropagation
-        current_q = self.model(states).gather(1, actions.unsqueeze(1)) # Predicciones actuales
-        loss = nn.MSELoss()(current_q.squeeze(), target.detach()) #  Cálculo de pérdida (MSE)
 
-        # Optimización
+        # Double DQN # Uses model to select action, but target_model to evaluate its Q-value.
+        next_actions = self.model(next_states).max(1)[1]  # Selection with main network
+        next_q = self.target_model(next_states).gather(1, next_actions.unsqueeze(1))  # Evaluation with target network
+        target = rewards + (1 - dones) * self.gamma * next_q.squeeze()  # Target calculation, adjusted Bellman formula
+
+        # Weight Update # Backpropagation
+        current_q = self.model(states).gather(1, actions.unsqueeze(1))  # Current predictions
+        loss = nn.MSELoss()(current_q.squeeze(), target.detach())  # Loss calculation (MSE)
+
+        # Optimization
         self.optimizer.zero_grad()
-        loss.backward()  # Calcula gradientes
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)  # Evita exploding gradients
-        self.optimizer.step()  # Actualiza pesos
-        
-        # Soft update del target network
+        loss.backward()  # Calculate gradients
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)  # Prevent exploding gradients
+        self.optimizer.step()  # Update weights
+
+        # Soft update of the target network
         for target_param, param in zip(self.target_model.parameters(), self.model.parameters()):
             target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
 
-        # desminuir epsilon (exploración) para aumentar la explotación
-        if agent.epsilon > agent.epsilon_min:
-            agent.epsilon *= agent.epsilon_decay
+        # Decrease epsilon (exploration) to increase exploitation
+        # if agent.epsilon > agent.epsilon_min:
+        #     agent.epsilon *= agent.epsilon_decay
 
     def save_model(self, save_path, e, best_score, train_rewards):
         torch.save({
             'model_state_dict': self.model.state_dict(),
-            'target_model_state_dict': self.target_model.state_dict(),  # Importante para Double DQN
+            'target_model_state_dict': self.target_model.state_dict(),  # Important for Double DQN
             'optimizer_state_dict': self.optimizer.state_dict(),
             'epsilon': self.epsilon,
-            'episode': e,  # Episodio actual
+            'episode': e,  # Current episode
             'best_score': best_score,
-            'train_rewards': train_rewards  # Historial de recompensas
+            'train_rewards': train_rewards  # Reward history
         }, save_path)
-        print(f"💾 Modelo guardado en {save_path} (Episodio {e}, ε={self.epsilon:.4f})")
+        print(f"💾 Model saved to {save_path} (Episode {e}, ε={self.epsilon:.4f})")
 
     def load_model(self, saved_path,device):
         try:
-            # 1. Cargar el checkpoint con manejo de seguridad
+            # 1. Load the checkpoint with safety handling
             checkpoint = torch.load(saved_path, 
                                 map_location=device,
-                                weights_only=False)  # Necesario para tu versión de PyTorch
-            
-            # 2. Cargar pesos del modelo
+                                weights_only=False)
+
+            # 2. Load model weights
             self.model.load_state_dict(checkpoint['model_state_dict'])
             self.target_model.load_state_dict(checkpoint['target_model_state_dict'])
-            
-            # 3. Mover modelos al dispositivo correcto
+
+            # 3. Move models to the correct device
             self.model.to(device)
             self.target_model.to(device)
-            
-            # 4. Cargar estado del optimizador
+
+            # 4. Load optimizer state
             if 'optimizer_state_dict' in checkpoint:
                 self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-                # Mover tensores del optimizador al dispositivo
+                # Move optimizer tensors to the device
                 for state in self.optimizer.state.values():
                     for k, v in state.items():
                         if isinstance(v, torch.Tensor):
                             state[k] = v.to(device)
-            
-            # 5. Restaurar parámetros de entrenamiento
+
+            # 5. Restore training parameters
             self.epsilon = checkpoint.get('epsilon', self.epsilon_min)
             best_score = checkpoint.get('best_score', -np.inf)
             train_rewards = checkpoint.get('train_rewards', [])
-            
-            print(f"✅ Modelo cargado correctamente en {device}")
-            print(f"| ε: {self.epsilon:.4f} | Mejor Score: {best_score:.2f}% |")
-            
+
+            print(f"✅ Model loaded successfully to {device}")
+            print(f"| ε: {self.epsilon:.4f} | Best Score: {best_score:.2f}% |")
+
             return self, best_score, train_rewards
         except Exception as e:
-            print(f"❌ Error al cargar el modelo: {str(e)}")
-            print("Asegúrate que:")
-            print("1. La arquitectura del modelo no ha cambiado")
-            print("2. El archivo no está corrupto")
-            print("3. Las versiones de PyTorch son compatibles")
+            print(f"❌ Error loading model: {str(e)}")
             raise
 
-# --- Función de Evaluación (AJUSTES PARA HORARIO) ---
+# --- Evaluation Function  ---
 def evaluate(agent, env, df, initial_balance=10000, return_full_history=False):
     """
-    Propósito Principal
-    Evaluar cómo se comportaría tu estrategia de trading en el mundo real, usando:
+    Main Purpose
+    Evaluate how your trading strategy would perform in the real world, using:
 
-    Datos históricos (precios por hora).
+    Historical data (hourly prices).
 
-    Política aprendida por el agente (compra/venta/mantener).
+    Policy learned by the agent (buy/sell/hold).
 
-    Gestión de capital conservadora (inversión del 1% por operación).
+    Conservative capital management (1% investment per trade).
     
     """
-    state = env.reset()               # Reinicia el entorno (primer estado)
-    portfolio = initial_balance       # Ej: $10,000 USD iniciales
-    positions = 0                     # Cantidad de activos (ETH) en posesión
-    portfolio_history = [portfolio]   # Registra valor del portafolio en cada paso
-    price_history = []                # Guarda precios desnormalizados
-    actions_history = []              # Registra acciones tomadas
+    state = env.reset()               # Reset the environment (first state)
+    portfolio = initial_balance       # E.g., $10,000 initial USD
+    positions = 0                     # Amount of assets (ETH) held
+    portfolio_history = [portfolio]   # Record portfolio value at each step
+    price_history = []                # Store denormalized prices
+    actions_history = []              # Record actions taken
     done = False
 
-    # Desnormalizador de precios
+    # Price denormalizer
     price_min = df['close_price'].min()
     price_range = df['close_price'].max() - price_min
     
     while not done:
         action = agent.act(state)
         next_state, _, done, info = env.step(action)
-        
-        # Desnormalizar precio
+
+        # Denormalize price
         current_price = info['price'] * price_range + price_min
-        
-        # Ejecutar operaciones
-        if action == 2 and portfolio > 0:  # Comprar
-            buy_amount = portfolio * 0.1  # 10% del portafolio
+
+        # Execute trades
+        if action == 2 and portfolio > 0:  # Buy
+            buy_amount = portfolio * 0.1  # 10% of the portfolio
             positions += (buy_amount * (1 - env.commission)) / current_price
             portfolio -= buy_amount
-        elif action == 0 and positions > 0:  # Vender
-            sell_amount = positions * 0.1  # Vender 10% de la posición
+        elif action == 0 and positions > 0:  # Sell
+            sell_amount = positions * 0.1  # Sell 10% of the position
             portfolio += (sell_amount * current_price) * (1 - env.commission)
             positions -= sell_amount
-        
-        # Registrar valores
+
+        # Record values
         current_value = portfolio + positions * current_price
         portfolio_history.append(current_value)
         price_history.append(current_price)
         actions_history.append(action)
         state = next_state
-    
-    # Calcular retorno porcentual
+
+    # Calculate percentage return
     final_return = (portfolio_history[-1] / initial_balance - 1) * 100
     
     if return_full_history:
         return final_return, portfolio_history, price_history, actions_history
     return final_return, portfolio_history
 
-""" ----------------------------------------------------- Implementación Principal ------------------------------------------------------ """
+""" ----------------------------------------------------- Main Implementation ------------------------------------------------------ """
 if __name__ == "__main__":
-    # Cargar datos 
+    # Load data
     data_array, df, scaler = load_and_preprocess_data('C:\\Andrey\\Kakua_Projets\\Trading\\Bot_RL_v1\\Datasets\\historical_01-01-2019_to_01-01-2025_ETHUSDT.csv')
 
-    # --- División de datos (80% train, 20% test) ---
+    # --- Data division (80% train, 20% test) ---
     train_size = int(0.8 * len(data_array))
     train_data = data_array[:train_size]
     test_data = data_array[train_size:]
 
-    print(f"\nDivisión de datos:")
+    print(f"\nData division:")
     print(f"Total: {len(data_array)}")
-    print(f"Entrenamiento: {len(train_data)}")
-    print(f"Evaluación: {len(test_data)}")
+    print(f"Training: {len(train_data)}")
+    print(f"Evaluation: {len(test_data)}")
 
-    # --- Creación de entornos ---
-    window_size = 24  # Cambiado a 24 horas 
+    # --- Environment creation ---
+    window_size = 24  # Changed to 24 hours
     train_env = EnhancedTradingEnvironment(train_data, window_size)
     test_env = EnhancedTradingEnvironment(test_data, window_size)
-    state_size = window_size * train_data.shape[1]  # features * ventana temporal
-    print(f"State size calculado: {state_size}")
+    state_size = window_size * train_data.shape[1]  # features * time window
+    print(f"State size calculated: {state_size}")
     action_size = train_env.action_space
 
-    # --- Configuración del entrenamiento ---
+    # --- Training configuration ---
     agent = EnhancedDQNAgent(state_size, action_size)
     episodes = 150 
     save_path = 'best_trading_model.pth'
@@ -410,22 +403,22 @@ if __name__ == "__main__":
     no_improve = 0
     patience = max(15, int(episodes * 0.01))
 
-    # Verificación de dimensiones
-    print(f"Número de features: {train_data.shape[1]}")
+    # Dimension verification
+    print(f"Number of features: {train_data.shape[1]}")
     print(f"Window size: {window_size}")
-    print(f"State size calculado: {window_size * train_data.shape[1]}")
+    print(f"State size calculated: {window_size * train_data.shape[1]}")
 
-    # --- Entrenamiento por fases
-    print("\nComenzando entrenamiento...")
+    # --- Training Phases
+    print("\nStarting training...")
     train_rewards = []
 
-    # Cada episodio es una pasada completa por los datos de entrenamiento
+    # Each episode is a complete pass through the training data
     for e in range(episodes):
-        state = train_env.reset() # Reinicia al inicio de los datos
+        state = train_env.reset() # Reset to the start of the data
         total_reward = 0
         done = False
-        
-        # Ajustar parámetros por fase
+
+        # Adjust parameters by phase
         if e < int(episodes*0.4):
             agent.epsilon = max(0.6, agent.epsilon)
             train_env.commission = 0.0003
@@ -436,127 +429,123 @@ if __name__ == "__main__":
             agent.epsilon = max(0.1, agent.epsilon)
             train_env.commission = 0.0008
 
-        while not done: # Hasta llegar al final de los datos de entrenamiento
-            action = agent.act(state) # Decide comprar/vender/mantener  (ε-greedy)
-            next_state, reward, done, _ = train_env.step(action) # Aplica acción
-            agent.remember(state, action, reward, next_state, done) # Almacena experiencias para aprender después
-            state = next_state # Avanza al siguiente estado
+        while not done: # Until reaching the end of the training data
+            action = agent.act(state) # Decide to buy/sell/hold (ε-greedy)
+            next_state, reward, done, _ = train_env.step(action) # Apply action
+            agent.remember(state, action, reward, next_state, done) # Store experiences for later learning
+            state = next_state # Move to the next state
             total_reward += reward
-            
-            if len(agent.memory) > agent.batch_size: # Si hay suficientes experiencias almacenadas (batch_size=64)
-                agent.replay() # backpropagation, Entrena con mini-batches la red neuronal
+
+            if len(agent.memory) > agent.batch_size: # If there are enough stored experiences (batch_size=64)
+                agent.replay() # backpropagation, Train the neural network with mini-batches
             #print(f'epsilon: {agent.epsilon}')
         
         train_rewards.append(total_reward)
-        
-        # Evaluación y guardado
+
+        # Evaluation and saving
         if e % 10 == 0:
             val_return, _, _, actions = evaluate(agent, test_env, df, return_full_history=True)
             elapsed = (time.time() - start_time) / 3600
-            
-            # Calcular distribución de acciones
+
+            # Calculate action distribution
             actions_dist = pd.Series(actions).value_counts(normalize=True)
-            
-            print(f"Episodio: {e+1}/{episodes}, Recompensa: {total_reward:.2f}, "
-                  f"Retorno Val: {val_return:.2f}%, ε: {agent.epsilon:.3f}, "
-                  f"Tiempo: {elapsed:.2f}h")
-            print(f"Acciones: Comprar={actions_dist.get(2, 0):.1%}, "
-                  f"Vender={actions_dist.get(0, 0):.1%}, "
-                  f"Mantener={actions_dist.get(1, 0):.1%}")
-            
+
+            print(f"Episode: {e+1}/{episodes}, Reward: {total_reward:.2f}, "
+                  f"Val Return: {val_return:.2f}%, ε: {agent.epsilon:.3f}, "
+                  f"Time: {elapsed:.2f}h")
+            print(f"Actions: Buy={actions_dist.get(2, 0):.1%}, "
+                  f"Sell={actions_dist.get(0, 0):.1%}, "
+                  f"Hold={actions_dist.get(1, 0):.1%}")
+
             # Early stopping
             if val_return > best_score:
                 best_score = val_return
                 no_improve = 0
-                # Guardar TODO el estado del agente (no solo el modelo)
+                # Save ALL agent status 
                 agent.save_model(save_path,e,best_score,train_rewards) 
-                # torch.save({
-                #     'model_state_dict': agent.model.state_dict(),
-                #     'target_model_state_dict': agent.target_model.state_dict(),  # Importante para Double DQN
-                #     'optimizer_state_dict': agent.optimizer.state_dict(),
-                #     'epsilon': agent.epsilon,
-                #     'episode': e,  # Episodio actual
-                #     'best_score': best_score,
-                #     'train_rewards': train_rewards  # Historial de recompensas
-                # }, save_path)
-                # print(f"💾 Modelo guardado en {save_path} (Episodio {e}, ε={agent.epsilon:.4f})")
+
             else:
-                no_improve += 1 
-                if no_improve >= patience: # Si no mejora en "patience" evaluaciones
-                    print(f"Early stopping en episodio {e}")
+                no_improve += 1
+                if no_improve >= patience: # If no improvement in "patience" evaluations
+                    print(f"Early stopping at episode {e}")
                     break
-        
-    """------------------------- Evaluación final y visualización -------------------------"""
-    # cargar el modelo guardado
+
+        # Decrease epsilon (exploration) to increase exploitation
+        if agent.epsilon > agent.epsilon_min:
+            agent.epsilon *= agent.epsilon_decay
+        if e % 2 == 0:
+            print('e: ',agent.epsilon)
+    """------------------------- Final Evaluation and Visualization -------------------------"""
+    # Load the saved model
     agent, best_score, train_rewards = agent.load_model(save_path, device)
 
-    # --- Evaluación Final ---
-    print("\nEvaluando con datos de test...")
+    # --- Final Evaluation ---
+    print("\nEvaluating on test data...")
     final_return, portfolio_history, price_history, actions_history = evaluate(
         agent, test_env, df, return_full_history=True)
-    
-    # Cálculo de métricas
+
+    # Metric calculations
     final_value = portfolio_history[-1]
     returns = np.diff(portfolio_history) / portfolio_history[:-1]
     sharpe_ratio = np.mean(returns) / np.std(returns) * np.sqrt(24 * 365)
     max_drawdown = (np.maximum.accumulate(portfolio_history) - portfolio_history).max()
     buy_hold_return = (price_history[-1] / price_history[0] - 1) * 100
     actions_dist = pd.Series(actions_history).value_counts(normalize=True)
-    print("\n--- Resultados Finales ---")
-    print(f"Valor inicial: $10,000.00")
-    print(f"Valor final: ${final_value:,.2f}")
-    print(f"Retorno estrategia: {(final_value/10000-1)*100:.2f}%")
-    print(f"Retorno Buy & Hold: {buy_hold_return:.2f}%")
-    print(f"Ratio de Sharpe: {sharpe_ratio:.2f}")
+    print("\n--- Final Results ---")
+    print(f"Initial Value: $10,000.00")
+    print(f"Final Value: ${final_value:,.2f}")
+    print(f"Strategy Return: {(final_value/10000-1)*100:.2f}%")
+    print(f"Buy & Hold Return: {buy_hold_return:.2f}%")
+    print(f"Sharpe Ratio: {sharpe_ratio:.2f}")
     print(f"Max Drawdown: ${max_drawdown:,.2f} ({max_drawdown/10000:.2%})")
-    print(f"Acciones: Comprar={actions_dist.get(2, 0):.1%}, "
-          f"Vender={actions_dist.get(0, 0):.1%}, "
-          f"Mantener={actions_dist.get(1, 0):.1%}")
-    print(f"Tiempo total: {(time.time() - start_time)/3600:.2f} horas")
+    print(f"Actions: Buy={actions_dist.get(2, 0):.1%}, "
+          f"Sell={actions_dist.get(0, 0):.1%}, "
+          f"Hold={actions_dist.get(1, 0):.1%}")
+    print(f"Total Time: {(time.time() - start_time)/3600:.2f} hours")
 
-    # --- Visualización ---
+    # --- Visualization ---
     plt.figure(figsize=(16, 10))
 
-    # Gráfico 1: Precio
+    # Plot 1: Price
     plt.subplot(2, 2, 1)
-    plt.plot(price_history, label='Precio ETH', color='blue', alpha=0.6)
-    plt.xlabel('Paso de Tiempo (horas)')
-    plt.ylabel('Precio (USD)')
-    plt.title('Precio durante Evaluación')
+    plt.plot(price_history, label='ETH Price', color='blue', alpha=0.6)
+    plt.xlabel('Time Step (hours)')
+    plt.ylabel('Price (USD)')
+    plt.title('Price during Evaluation')
     plt.grid(True)
 
-    # Gráfico 2: Portafolio
+    # Plot 2: Portfolio
     plt.subplot(2, 2, 2)
-    plt.plot(portfolio_history, label='Valor Portafolio', color='green')
-    plt.axhline(y=10000, color='red', linestyle='--', label='Inversión Inicial')
-    plt.xlabel('Paso de Tiempo (horas)')
-    plt.ylabel('Valor (USD)')
-    plt.title('Rendimiento del Portafolio')
+    plt.plot(portfolio_history, label='Portfolio Value', color='green')
+    plt.axhline(y=10000, color='red', linestyle='--', label='Initial Investment')
+    plt.xlabel('Time Step (hours)')
+    plt.ylabel('Value (USD)')
+    plt.title('Portfolio Performance')
     plt.legend()
     plt.grid(True)
 
-    # Gráfico 3: Acciones
+    # Plot 3: Actions
     plt.subplot(2, 2, 3)
     plt.plot(actions_history, 'o', markersize=2, alpha=0.6)
-    plt.yticks([0, 1, 2], ['Vender', 'Mantener', 'Comprar'])
-    plt.xlabel('Paso de Tiempo (horas)')
-    plt.ylabel('Acción')
-    plt.title('Distribución de Acciones')
+    plt.yticks([0, 1, 2], ['Sell', 'Hold', 'Buy'])
+    plt.xlabel('Time Step (hours)')
+    plt.ylabel('Action')
+    plt.title('Action Distribution')
     plt.grid(True)
 
-    # Gráfico 4: Recompensas
+    # Plot 4: Rewards
     plt.subplot(2, 2, 4)
-    plt.plot(train_rewards, label='Recompensa', color='purple')
-    plt.xlabel('Episodio')
-    plt.ylabel('Recompensa Acumulada')
-    plt.title('Progreso del Entrenamiento')
+    plt.plot(train_rewards, label='Reward', color='purple')
+    plt.xlabel('Episode')
+    plt.ylabel('Cumulative Reward')
+    plt.title('Training Progression')
     plt.grid(True)
 
     plt.tight_layout()
     plt.show()
 
-    # Marca el final
+    # Mark the end
     end_time = time.time()
-    # Calcula el tiempo transcurrido en horas
+    # Calculate elapsed time in hours
     elapsed_time = end_time - start_time
-    print(f"Tiempo de ejecución: {elapsed_time/3600:.4f} Horas")
+    print(f"Elapsed Time: {elapsed_time/3600:.4f} Hours")
