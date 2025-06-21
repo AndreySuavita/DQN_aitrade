@@ -3,6 +3,8 @@ import pandas as pd
 from binance.enums import *
 import math
 from decouple import config
+from datetime import datetime, timedelta, timezone
+import time
 
 API_KEY = config('API_KEY')
 API_SECRET = config('API_SECRET')
@@ -10,35 +12,7 @@ API_SECRET = config('API_SECRET')
 class binance_actions:
     def __init__(self, API_KEY=API_KEY, API_SECRET=API_SECRET, testnet=True):
         self.client = Client(API_KEY, API_SECRET, testnet = testnet)
-    # def get_last_klines_hours(self, symbol= 'ETHUSDT', limit=1000):
-    #     """
-    #     function to get the last klines of a symbol in hours.
-    #     param symbol: The symbol to get the klines for. Default is 'ETHUSDT'.
-    #     param limit: The number of klines to get. Default is 1000.  
-    #     """
-    #     interval = Client.KLINE_INTERVAL_1HOUR  
-    #     klines = self.client.get_klines(symbol=symbol, interval=interval, limit=limit+1) # trae uno más para evitar traer el actual
 
-    #     columns = [
-    #         "open_time", "open_price", "high_price", "low_price", "close_price",
-    #         "close_volume", "close_time", "quote_asset_volume", "number_of_trades",
-    #         "taker_buy_base_volume", "taker_buy_quote_volume", "ignore"
-    #     ]
-    #     df = pd.DataFrame(klines[:-1], columns=columns) # evita traer el último kline, el cual aun no ha cerrado
-
-    #     # Convertir columnas numéricas
-    #     numeric_cols = [
-    #         "open_price", "high_price", "low_price", "close_price",
-    #         "close_volume", "quote_asset_volume",
-    #         "taker_buy_base_volume", "taker_buy_quote_volume"
-    #     ]
-    #     df[numeric_cols] = df[numeric_cols].astype(float)
-
-    #     # Convertir timestamps (borrar en producción)
-    #     # df["open_time"] = pd.to_datetime(df["open_time"], unit='ms')
-    #     # df["close_time"] = pd.to_datetime(df["close_time"], unit='ms')
-
-    #     return df
     def get_klines(self, symbol='ETHUSDT', interval='1h', limit=1000):
         """
         Function to get the last klines of a symbol for a given interval.
@@ -108,7 +82,7 @@ class binance_actions:
                 response[asset['asset']] = {'free': float(asset['free']),'locked': float(asset['locked'])}
         
         return response
-    def trade_eth_usdt(self,amount_usdt, side='buy'):
+    def trade_eth_usdt(self,amount_usdt, side):
         """
         Ejecuta una orden de compra o venta de ETH contra USDT usando testnet.
         
@@ -156,30 +130,65 @@ class binance_actions:
         # Ejecutar la orden
         try:
             if side == 'buy':
+                '''
+                Qué se cobra: La comisión se deduce del activo de cotización (en ETH/USDT, se cobra en USDT).
+                Ejemplo:
+                Compras 0.1 ETH a $1000 (total: $100).
+                Comisión (0.1%): $0.10 en USDT.
+                Recibes: 0.1 ETH (sin deducción).
+                Balance final:
+                USDT: -100 - 0.10 = -100.10.
+                ETH: +0.1.
+                '''
                 order = self.client.order_market_buy(symbol=symbol, quantity=eth_quantity)
-                print(f"✅ ORDEN DE COMPRA REALIZADA: {eth_quantity} ETH por aproximadamente {amount_usdt} USDT")      
             elif side == 'sell':
+                '''
+                Qué se cobra: La comisión se deduce del activo base (en ETH/USDT, se cobra en ETH).
+                Ejemplo:
+                Vendes 0.1 ETH a $1000 (total: $100).
+                Comisión (0.1%): 0.0001 ETH (equivalente a $0.10).
+                Recibes: $100 en USDT.
+                Balance final:
+                ETH: -0.1 - 0.0001 = -0.1001.
+                USDT: +100.
+                '''
                 order = self.client.order_market_sell(symbol=symbol, quantity=eth_quantity)
-                print(f"✅ ORDEN DE VENTA REALIZADA: {eth_quantity} ETH por aproximadamente {amount_usdt} USDT")
             else:
                 print("❌ Acción no reconocida. Usa 'buy' o 'sell'.")
                 return
-            
-            return {'ID_order':order['orderId'], 'symbol':order['symbol'], 'status':order['status'], 'ETH_quantity':order['executedQty'], 'USDT_quantity':amount_usdt}
+            commission = order['fills'][0]['commission'] # Real Commission in USDT or BNB
+            commission_asset = order['fills'][0]['commissionAsset'] # Activo de la commission (USDT o BNB) , USDT if buy, ETH if sell
+            print(f'✅ ORDER OF {side.upper()} EXECUTED: {eth_quantity} ETH FOR {amount_usdt} USDT, COMMISSION: {commission} USDT , COMMISSION ASSET: {commission_asset}')
+            return {'ID_order':order['orderId'], 'symbol':order['symbol'], 'status':order['status'], 'ETH_quantity':order['executedQty'], 'USDT_quantity':amount_usdt, 'commission':commission, 'commission_asset':commission_asset} 
 
         except Exception as e:
             print("❌ Error al ejecutar la orden:", e)
 
+def wait_until_next_time_cycle(time_cycle, offset_seconds=10):
+    """Wait until the next time cycle with an offset"""
+    now = datetime.now(timezone.utc)  # Modern and recommended way
+    if time_cycle not in ['hour', '5m']:
+        raise ValueError("time_cycle must be 'hour' or '5m'")
+    if time_cycle == 'hour':
+        # Calculate the next hour start
+        next_time = (now.replace(minute=0, second=0, microsecond=0) 
+                    + timedelta(hours=1)) 
+    elif time_cycle == '5m':
+        next_time = (now.replace(minute=(now.minute // 5) * 5, second=0, microsecond=0) 
+                    + timedelta(minutes=5))
+    # Add the offset
+    target_time = next_time + timedelta(seconds=offset_seconds)
+    # Calculate how long to wait
+    wait_seconds = (target_time - now).total_seconds()
+    if wait_seconds > 0:
+        time.sleep(wait_seconds)
         
 if __name__ == "__main__":
 
     binance = binance_actions()
     
-    # print(binance.get_last_klines_hours("ETHUSDT",15))
-    print(binance.get_klines(symbol='ETHUSDT', interval='5m', limit=15))
-    # print(binance.get_balance("ETH"))
+    # print(binance.get_klines(symbol='ETHUSDT', interval='5m', limit=15))
+    print(binance.get_balance("ETH"))
     # print(binance.trade_eth_usdt(amount_usdt=11, side='buy')) #side='buy' or side='sell'
-    # print(binance.trade_eth_usdt(amount_usdt=11, side='sell')) #side='buy' or side='sell'
+    # print(binance.trade_eth_usdt(amount_usdt=3500, side='sell')) #side='buy' or side='sell'
 
-
-    

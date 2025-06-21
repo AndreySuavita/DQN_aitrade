@@ -1,6 +1,6 @@
 venv/
 Double_DQN_hourly_backup/
-Double_DQN_hourly_SSTCV_OP_V_T_backup
+Double_DQN_SSTCV_OP_V_T_hourly_backup
 __pycache__/
 
 trading_bot.log

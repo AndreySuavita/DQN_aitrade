@@ -1,10 +1,12 @@
-pandas
-scikit-learn
-seaborn
-matplotlib
+pandas==2.2.3
+scikit-learn==1.6.1
+numpy==1.26.4
+seaborn==0.13.2
+matplotlib==3.10.1
 python-decouple==3.8
 pandas_ta>=0.3.14b0
+python-binance==1.0.28
+pip install pyqt5==5.15.11
 
 #pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 #pip install "numpy<2" "pandas_ta>=0.3.14b0" --pre
-#pip install pyqt5
