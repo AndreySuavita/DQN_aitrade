@@ -167,9 +167,9 @@ class binance_actions:
 def wait_until_next_time_cycle(time_cycle, offset_seconds=10):
     """Wait until the next time cycle with an offset"""
     now = datetime.now(timezone.utc)  # Modern and recommended way
-    if time_cycle not in ['hour', '5m']:
+    if time_cycle not in ['5m', 'hourly']:
         raise ValueError("time_cycle must be 'hour' or '5m'")
-    if time_cycle == 'hour':
+    if time_cycle == 'hourly':
         # Calculate the next hour start
         next_time = (now.replace(minute=0, second=0, microsecond=0) 
                     + timedelta(hours=1)) 

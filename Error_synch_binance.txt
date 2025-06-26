@@ -1,0 +1,53 @@
+El error 0x80070426 en Windows 10 indica que el servicio de tiempo de Windows (Windows Time) está deshabilitado o no se ha iniciado. Vamos a solucionarlo paso a paso:
+
+Solución Completa para Windows 10
+1. Iniciar el servicio Windows Time manualmente:
+Abre el Administrador de tareas (Ctrl + Shift + Esc).
+
+Ve a la pestaña "Servicios".
+
+Busca W32Time (nombre del servicio de tiempo).
+
+Haz clic derecho y selecciona "Iniciar".
+
+2. Habilitar el servicio (si está desactivado):
+Presiona Win + R, escribe services.msc y pulsa Enter.
+
+Busca "Hora de Windows" (Windows Time).
+
+Haz clic derecho → Propiedades.
+
+En "Tipo de inicio", selecciona "Automático".
+
+Haz clic en "Iniciar" → "Aplicar" → "Aceptar".
+
+3. Sincronización manual desde CMD (como Administrador):
+cmd
+net start w32time  # Inicia el servicio
+w32tm /resync /force  # Fuerza sincronización
+4. Verificar sincronización:
+cmd
+w32tm /query /status
+Busca la línea "Origen de sincronización" (debería mostrar un servidor NTP como time.windows.com).
+
+#######################################################################################################
+configurar para siempre el cambio
+#####################################################################################################
+2. Si configuraste el servicio como Automático (recomendado):
+✅ No será necesario repetirlo. El servicio:
+
+Se iniciará automáticamente al arrancar el PC.
+
+Se sincronizará periódicamente (cada 7 días por defecto en Windows 10).
+
+Cómo configurarlo para siempre:
+
+Abre services.msc (Win + R → escribe services.msc).
+
+Busca "Hora de Windows" (Windows Time).
+
+Haz clic derecho → Propiedades.
+
+En "Tipo de inicio", selecciona Automático.
+
+Haz clic en "Aplicar" → "Aceptar".

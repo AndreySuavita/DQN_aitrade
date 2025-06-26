@@ -21,13 +21,14 @@ def load_and_preprocess_data(window_size, time_cycle, filepath='', scaler=False,
     Returns:
         tuple: (normalized_data, original_data, scaler)
     """
-    binance = binance_actions()
+    
     if time_cycle == '5m':
         window_1 = 12   # 1 hora (12 velas de 5m)
         window_2 = 72   # 6 horas
         window_3 = 288  # 24 horas (útil para soportes/resistencias diarias)
         max_window = max(window_1, window_2, window_3)
         if binance_on:
+            binance = binance_actions()
             data=binance.get_klines(symbol="ETHUSDT", interval='5m', limit=max_window - 1 + window_size)
             df = data.set_index('close_time')
             # print(df.shape)
@@ -68,6 +69,7 @@ def load_and_preprocess_data(window_size, time_cycle, filepath='', scaler=False,
         window_2 = 50
         max_window = max(window_1, window_2)
         if binance_on:
+            binance = binance_actions()
             data=binance.get_klines(symbol="ETHUSDT", interval='1h', limit=max_window - 1 + window_size)
             df = data.set_index('close_time')
             # print(df.shape)
@@ -145,7 +147,7 @@ def evaluate(agent, env, scaler, initial_balance=10000, binance_on=False, time_c
     actions_history = []              # Record actions taken  
     done = False                      # Simulation end flag
     counter = 0                       # Counter for Binance connection    
-
+    only_porflio = []
     if with_binance_balance and binance_on:
         binance = binance_actions()
         def get_balance(binance):
@@ -155,11 +157,12 @@ def evaluate(agent, env, scaler, initial_balance=10000, binance_on=False, time_c
             return portfolio, positions
         portfolio, positions = get_balance(binance)
 
-        print('Current portfolio: ',portfolio)
-        print(f'Current positions: ',positions)
+        print('[+] Current portfolio: ',portfolio)
+        print('[+] Current positions: ',positions)
+        #print('[+] Initial Value (USDT): ')
     #exit()
-    #portfolio_history = [portfolio]   # Record portfolio value at each step
-    portfolio_history = []
+    portfolio_history = [portfolio]   # Record portfolio value at each step
+    #portfolio_history = []
 
     # Prepare an empty array for scaling investment
     temp_array = np.zeros((1, len(scaler.feature_names_in_))) # Use the same dimensionality as the scaler
@@ -214,13 +217,15 @@ def evaluate(agent, env, scaler, initial_balance=10000, binance_on=False, time_c
         price_history.append(current_price)
         actions_history.append(action)
         
-
+        if portfolio <=5000:
+            only_porflio.append(portfolio)
+            
         # If Binance is connected
         if binance_on:
             print('[-] Portfolio: ',portfolio)
             print('[-] Positions: ',positions)
-            print('[-] Current value Portafolio:',current_value)
-            print('[-] Current price',current_price)
+            print('[-] Current value: ',current_value)
+            print('[-] Current price (EHT): ',current_price)
             if action == 2:
                 print(f'[-] Action: {action} (Buy)')
             elif action == 0:
@@ -235,6 +240,8 @@ def evaluate(agent, env, scaler, initial_balance=10000, binance_on=False, time_c
                 done = True
         else:
             state = next_state
+
+    print('[+] Min Value reached portfolio',min(only_porflio))
 
     final_return = (portfolio_history[-1] / portfolio_history[0] - 1) * 100 # Percentage return
     
