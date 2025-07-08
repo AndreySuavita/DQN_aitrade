@@ -51,7 +51,7 @@ class EnhancedTradingEnvironment:
             try:
                 price_change = (next_price - current_price) / current_price if current_price != 0 else 0
             except Exception as e:
-                logging.warning(f"Error calculating price_change: {e}")
+                print(f"Error calculating price_change: {e}")
                 price_change = 0
             
             # Validate action based on current position

@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import pickle
 import json
 import time
+from datetime import datetime
 from sklearn.preprocessing import MinMaxScaler
 
 # --- Load and preprocess data ---
@@ -70,7 +71,9 @@ def load_and_preprocess_data(window_size, time_cycle, filepath='', scaler=False,
         max_window = max(window_1, window_2)
         if binance_on:
             binance = binance_actions()
-            data=binance.get_klines(symbol="ETHUSDT", interval='1h', limit=max_window - 1 + window_size)
+            # print('window_size: ',window_size)
+            # print(max_window - 1 + window_size)
+            data=binance.get_klines(symbol="ETHUSDT", interval='1h', limit = max_window - 1 + window_size)
             df = data.set_index('close_time')
             # print(df.shape)
             # exit()
@@ -95,6 +98,8 @@ def load_and_preprocess_data(window_size, time_cycle, filepath='', scaler=False,
             # Ensure columns match the original scaler
             if set(df.columns) != set(scaler.feature_names_in_):
                 raise ValueError("Features in data don't match scaler features")
+            # print('df')
+            # print(df)
             df_normalized = pd.DataFrame(scaler.transform(df), columns=df.columns)
             
         except FileNotFoundError:
@@ -146,8 +151,10 @@ def evaluate(agent, env, scaler, initial_balance=10000, binance_on=False, time_c
     price_history = []                # Store denormalized prices
     actions_history = []              # Record actions taken  
     done = False                      # Simulation end flag
-    counter = 0                       # Counter for Binance connection    
+    step_number = 0                       # Counter for Binance connection    
     only_porflio = []
+    
+    # If connected full binance, get last data from API
     if with_binance_balance and binance_on:
         binance = binance_actions()
         def get_balance(binance):
@@ -161,8 +168,8 @@ def evaluate(agent, env, scaler, initial_balance=10000, binance_on=False, time_c
         print('[+] Current positions: ',positions)
         #print('[+] Initial Value (USDT): ')
     #exit()
-    portfolio_history = [portfolio]   # Record portfolio value at each step
-    #portfolio_history = []
+    #portfolio_history = [portfolio]   # Record portfolio value at each step
+    portfolio_history = []
 
     # Prepare an empty array for scaling investment
     temp_array = np.zeros((1, len(scaler.feature_names_in_))) # Use the same dimensionality as the scaler
@@ -217,31 +224,60 @@ def evaluate(agent, env, scaler, initial_balance=10000, binance_on=False, time_c
         price_history.append(current_price)
         actions_history.append(action)
         
-        if portfolio <=5000:
+        if portfolio <=(initial_balance/2):
             only_porflio.append(portfolio)
             
         # If Binance is connected
         if binance_on:
             print('[-] Portfolio: ',portfolio)
             print('[-] Positions: ',positions)
-            print('[-] Current value: ',current_value)
-            print('[-] Current price (EHT): ',current_price)
+            print('[-] Current_value: ',current_value)
+            print('[-] Current_price (EHT): ',current_price)
             if action == 2:
                 print(f'[-] Action: {action} (Buy)')
             elif action == 0:
                 print(f'[-] Action: {action} (Sell)')
             else:
                 print(f'[-] Action: {action} (Hold)')
-            counter += 1
-            print(f'[-] Step_number: {counter}')
+            step_number += 1
+            print(f'[-] Step_number: {step_number}')
+            timestamp = time.time()
+            fecha_legible = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+
+            print(f'[-] Action_Time: {fecha_legible}')
             print('[+]------------------------------------------------')
-            # wait number_steps steps to finish the evaluation
-            if counter >= binance_on:
+            # Plot every step
+            test_results = {
+                'portfolio_history': portfolio_history,
+                'price_history': price_history,
+                'actions_dist': pd.Series(actions_history).value_counts(normalize=True).to_dict()
+            }
+            plot_results(test_results=test_results,
+                         actions_history=actions_history,
+                        save_img=f'Binance_test_result_{binance_on}.png',
+                        plot=False)
+            # Save results step by step in csv
+            df_new = pd.Series({'Portfolio':portfolio,'Positions':positions,'Current_value':current_value,'Current_price':current_price,'Action':action,
+                                'Step_number':step_number,'Action_time':timestamp})
+            df_new = df_new.to_frame().T.set_index('Action_time')
+            file_csv = f'Binance_results_live.csv'
+            try:
+                df_old = pd.read_csv(file_csv, index_col='Action_time')
+                Binance_results_live = pd.concat([df_old, df_new])
+            except:
+                Binance_results_live = df_new
+
+            # Save new Dataframe with live Values
+            Binance_results_live.to_csv(file_csv)
+
+            # Wait number_steps steps to finish the evaluation
+            if step_number >= binance_on:
                 done = True
         else:
             state = next_state
 
-    print('[+] Min Value reached portfolio',min(only_porflio))
+    if only_porflio:
+        print('[+] Min Value reached portfolio',min(only_porflio))
 
     final_return = (portfolio_history[-1] / portfolio_history[0] - 1) * 100 # Percentage return
     
@@ -269,7 +305,7 @@ def metrics(portfolio_history, test_return, price_history, actions_history, init
             f"Hold={actions_dist.get(1, 0):.1%}")
 
 # PLotting Function
-def plot_results(fold_results, train_rewards, initial_balance, actions_history, test_results, time_cycle, save_img=False, eval_img_path='Current_evaluation.png'):
+def plot_results(fold_results=False, train_rewards=False, initial_balance=False, actions_history=False, test_results=False, time_cycle=False, save_img=False, eval_img_path=False, plot=True):
     plt.figure(figsize=(20, 12))  
 
     """
@@ -287,72 +323,80 @@ def plot_results(fold_results, train_rewards, initial_balance, actions_history, 
                 fontsize=16, y=1.02, fontweight='bold')
 
     # --- Gráfica 1: Price vs Portfolio Value ---
-    plt.subplot(2, 3, 1)  # Fila 1, Col 1
-    plt.plot(test_results['price_history'], label='ETH Price', color='blue', alpha=0.6)
-    plt.ylabel('Price (USD)')
-    plt.legend(loc='upper left')
-    plt.grid(True)
-    ax2 = plt.gca().twinx()
-    ax2.plot(test_results['portfolio_history'], label='Portfolio Value', color='green')
-    ax2.axhline(y=initial_balance, color='red', linestyle='--', label='Initial Investment')
-    ax2.set_ylabel('Value (USD)')
-    ax2.legend(loc='upper right')
-    plt.title('Price vs Portfolio Value in Test')
+    if test_results:
+        plt.subplot(2, 3, 1)  # Fila 1, Col 1
+        plt.plot(test_results['price_history'], label='ETH Price', color='blue', alpha=0.6)
+        plt.ylabel('Price (USD)')
+        plt.legend(loc='upper left')
+        plt.grid(True)
+        ax2 = plt.gca().twinx()
+        ax2.plot(test_results['portfolio_history'], label='Portfolio Value', color='green')
+        ax2.axhline(y=initial_balance, color='red', linestyle='--', label='Initial Investment')
+        ax2.set_ylabel('Value (USD)')
+        ax2.legend(loc='upper right')
+        plt.title('Price vs Portfolio Value')
 
     # --- Gráfica 2: Performance by fold ---
-    plt.subplot(2, 3, 2)  # Fila 2, Col 1
-    plt.bar(range(1, len(fold_results)+1), fold_results, color='skyblue')
-    plt.axhline(y=np.mean(fold_results), color='r', linestyle='--', label='Average')
-    plt.title('Performance by Fold in SSTCV')
-    plt.xlabel('Fold')
-    plt.ylabel('Return (%)')
-    plt.legend()
-    plt.grid(True)
+    if fold_results:
+        plt.subplot(2, 3, 2)  # Fila 2, Col 1
+        plt.bar(range(1, len(fold_results)+1), fold_results, color='skyblue')
+        plt.axhline(y=np.mean(fold_results), color='r', linestyle='--', label='Average')
+        plt.title('Performance by Fold in SSTCV')
+        plt.xlabel('Fold')
+        plt.ylabel('Return (%)')
+        plt.legend()
+        plt.grid(True)
 
     # --- Gráfica 3: Training rewards ---
-    plt.subplot(2, 3, 3)  # Fila 1, Col 2
-    plt.plot(train_rewards, label='Reward', color='purple')
-    plt.title('Rewards During Training')
-    plt.xlabel('Episode')
-    plt.ylabel('Reward')
-    plt.grid(True)
+    if train_rewards:
+        plt.subplot(2, 3, 3)  # Fila 1, Col 2
+        plt.plot(train_rewards, label='Reward', color='purple')
+        plt.title('Rewards During Training')
+        plt.xlabel('Episode')
+        plt.ylabel('Reward')
+        plt.grid(True)
 
     # --- Gráfica 4: Action Timeline ---
-    plt.subplot(2, 3, 4)  # Fila 1, Col 3
-    plt.plot(actions_history, 'o', markersize=2, alpha=0.6)
-    plt.yticks([0, 1, 2], ['Sell', 'Hold', 'Buy'])
-    plt.xlabel('Time Step (hours)')
-    plt.ylabel('Action')
-    plt.title('Action Timeline')
-    plt.grid(True)
+    if actions_history:
+        plt.subplot(2, 3, 4)  # Fila 1, Col 3
+        plt.plot(actions_history, 'o', markersize=2, alpha=0.6)
+        plt.yticks([0, 1, 2], ['Sell', 'Hold', 'Buy'])
+        plt.xlabel('Time Step (hours)')
+        plt.ylabel('Action')
+        plt.title('Action Timeline')
+        plt.grid(True)
 
-    # --- Gráfica 5: Actions Distribution ---
-    plt.subplot(2, 3, 5)  # Fila 2, Col 2
-    actions_dist = test_results['actions_dist']
-    plt.bar(['Sell', 'Hold', 'Buy'], 
-            [actions_dist.get(0, 0), actions_dist.get(1, 0), actions_dist.get(2, 0)])
-    plt.title('Actions Distribution in Test')
-    plt.ylabel('Proportion')
+    if test_results:
+        # --- Gráfica 5: Actions Distribution ---
+        plt.subplot(2, 3, 5)  # Fila 2, Col 2
+        actions_dist = test_results['actions_dist']
+        plt.bar(['Sell', 'Hold', 'Buy'], 
+                [actions_dist.get(0, 0), actions_dist.get(1, 0), actions_dist.get(2, 0)])
+        plt.title('Actions Distribution in Test')
+        plt.ylabel('Proportion')
 
     # --- Gráfica 6: Evaluation Returns ---
-    plt.subplot(2, 3, 6)  # Fila 2, Col 3
-    try:
-        img = plt.imread(eval_img_path)
-        plt.imshow(img)
-        plt.axis('off')
-        #plt.title('Training Evaluation Returns')
-    except FileNotFoundError:
-        plt.text(0.5, 0.5, 'Evaluation plot not found', ha='center')
-        plt.axis('off')
+    if eval_img_path:
+        plt.subplot(2, 3, 6)  # Fila 2, Col 3
+        try:
+            img = plt.imread(eval_img_path)
+            plt.imshow(img)
+            plt.axis('off')
+            #plt.title('Training Evaluation Returns')
+        except FileNotFoundError:
+            plt.text(0.5, 0.5, 'Evaluation plot not found', ha='center')
+            plt.axis('off')
 
-    plt.tight_layout(pad=3.0)  # Space between subplots
+        plt.tight_layout(pad=3.0)  # Space between subplots
     
     if save_img:
         # Save image with high resolution
         plt.savefig(save_img, bbox_inches='tight', dpi=300)
         print(f"✓ Graph saved in {save_img}")
-        
-    plt.show()
+    if plot:
+        print('printing img')
+        print(plot)
+        plt.show()
     plt.close()
 
 # --- Plotting Evaluation Returns ---

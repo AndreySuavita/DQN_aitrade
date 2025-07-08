@@ -1,5 +1,4 @@
 import torch
-import logging
 from datetime import datetime
 import sys
 sys.path.append("../")
@@ -8,7 +7,6 @@ from binance_test import binance_test
 """------------------------------ MAIN EXECUTION ------------------------------"""
 
 # Initial configuration
-logging.basicConfig(filename='trading_bot.log', level=logging.INFO)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using: {device}")
 

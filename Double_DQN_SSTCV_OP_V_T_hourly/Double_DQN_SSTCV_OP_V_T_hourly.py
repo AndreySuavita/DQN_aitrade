@@ -1,6 +1,5 @@
 import pandas as pd
 import torch
-import logging
 import time
 from datetime import datetime
 import sys
@@ -18,9 +17,8 @@ from cross_validation import optimize_hyperparams, time_series_cv_train
 """
 
 if __name__ == "__main__":
-    # --- Log and device configuration ---
+    # --- main configuration ---
     start_time = time.time()
-    logging.basicConfig(filename='trading_bot.log', level=logging.INFO)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
@@ -120,7 +118,6 @@ if __name__ == "__main__":
     
     # 7. Results visualization
     test_results = {
-        'final_return': test_return,
         'portfolio_history': portfolio_history,
         'price_history': price_history,
         'actions_dist': pd.Series(actions_history).value_counts(normalize=True).to_dict()
@@ -133,5 +130,6 @@ if __name__ == "__main__":
         actions_history=actions_history,
         test_results=test_results,
         time_cycle=time_cycle,
-        save_img='Final_test_result.png'
+        save_img='Final_test_result.png',
+        eval_img_path='Current_evaluation.png'
     )
