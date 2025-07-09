@@ -254,6 +254,7 @@ def evaluate(agent, env, scaler, initial_balance=10000, binance_on=False, time_c
             }
             plot_results(test_results=test_results,
                          actions_history=actions_history,
+                         initial_balance=initial_balance,
                         save_img=f'Binance_test_result_{binance_on}.png',
                         plot=False)
             # Save results step by step in csv
