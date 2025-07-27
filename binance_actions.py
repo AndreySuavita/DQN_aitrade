@@ -295,6 +295,7 @@ def wait_until_next_time_cycle(time_cycle, offset_seconds=10):
     # Calculate how long to wait
     wait_seconds = (target_time - now).total_seconds()
     if wait_seconds > 0:
+        print(f'Waiting to next time_cycle ({time_cycle})')
         time.sleep(wait_seconds)
         
 if __name__ == "__main__":

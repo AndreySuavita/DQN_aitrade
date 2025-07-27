@@ -6,7 +6,6 @@ This project implements a trading bot using Reinforcement Learning (RL) techniqu
 
 The project combines traditional trading strategies with advanced machine learning techniques to create an automated trading system. It includes implementations of:
 - Double DQN (DDQN) for hourly trading
-- LSTM-based DDQN for enhanced time series analysis
 - Integration with Binance API for real-time trading
 
 ## Features

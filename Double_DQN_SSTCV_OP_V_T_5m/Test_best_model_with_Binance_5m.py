@@ -15,9 +15,9 @@ print(f"\nProcess start at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 window_size = 180
 initial_balance = 10000 # USD
 time_cycle = '5m'  
-binance_on = True # If True, Get data from binance kindle
-with_binance_balance = True # If True, use Binance balance for the test
-time_to_wait = 5 
+binance_on = 5 # put time to wait
+with_binance_balance = False # If True, use Binance balance for the test
+
 
 # Run the Binance test
-binance_test(device, window_size, time_cycle, initial_balance, binance_on, time_to_wait, with_binance_balance)
+binance_test(device, window_size, time_cycle, initial_balance, int(binance_on), with_binance_balance)

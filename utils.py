@@ -96,6 +96,8 @@ def load_and_preprocess_data(window_size, time_cycle, filepath='', scaler=False,
     if scaler:
         try:
             # Ensure columns match the original scaler
+            # print(df.columns)
+            # print(scaler.feature_names_in_)
             if set(df.columns) != set(scaler.feature_names_in_):
                 raise ValueError("Features in data don't match scaler features")
             # print('df')
@@ -148,11 +150,13 @@ def evaluate(agent, env, scaler, initial_balance=10000, binance_on=False, time_c
     state = env.reset()
     portfolio = initial_balance       # Example: $10,000 initial USD
     positions = 0                     # Amount of assets (ETH) held
+    portfolio_history = []            # Record portfolio value at each step
     price_history = []                # Store denormalized prices
     actions_history = []              # Record actions taken  
     done = False                      # Simulation end flag
-    step_number = 0                       # Counter for Binance connection    
-    only_porflio = []
+    step_number = 0                   # Counter for Binance connection    
+    only_portfolio = []
+    
     
     # If connected full binance, get last data from API
     if with_binance_balance and binance_on:
@@ -166,10 +170,8 @@ def evaluate(agent, env, scaler, initial_balance=10000, binance_on=False, time_c
 
         print('[+] Current portfolio: ',portfolio)
         print('[+] Current positions: ',positions)
-        #print('[+] Initial Value (USDT): ')
-    #exit()
-    #portfolio_history = [portfolio]   # Record portfolio value at each step
-    portfolio_history = []
+
+    
 
     # Prepare an empty array for scaling investment
     temp_array = np.zeros((1, len(scaler.feature_names_in_))) # Use the same dimensionality as the scaler
@@ -224,8 +226,9 @@ def evaluate(agent, env, scaler, initial_balance=10000, binance_on=False, time_c
         price_history.append(current_price)
         actions_history.append(action)
         
+        # save lowest portfolio value
         if portfolio <=(initial_balance/2):
-            only_porflio.append(portfolio)
+            only_portfolio.append(portfolio)
             
         # If Binance is connected
         if binance_on:
@@ -277,8 +280,8 @@ def evaluate(agent, env, scaler, initial_balance=10000, binance_on=False, time_c
         else:
             state = next_state
 
-    if only_porflio:
-        print('[+] Min Value reached portfolio',min(only_porflio))
+    if only_portfolio:
+        print('[+] Min Value reached portfolio',min(only_portfolio))
 
     final_return = (portfolio_history[-1] / portfolio_history[0] - 1) * 100 # Percentage return
     
